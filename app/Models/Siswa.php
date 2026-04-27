@@ -5,14 +5,10 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
-class FaceEmbedding extends Model
+class Siswa extends Model
 {
     use HasFactory;
 
-    protected $table = 'face_embeddings';
+    protected $table = 'siswa';
     protected $guarded = [];
-    
-    protected $casts = [
-        'embedding' => 'array',
-    ];
 }

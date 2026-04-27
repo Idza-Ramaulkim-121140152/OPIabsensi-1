@@ -6,25 +6,19 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     */
     public function up(): void
     {
         Schema::create('face_embeddings', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('employee_id')
-                ->unique()
-                ->constrained('employees')
-                ->cascadeOnDelete();
+            $table->unsignedBigInteger('user_id');
+            $table->string('user_type', 20);
             $table->json('embedding');
-            $table->timestampTz('created_at')->useCurrent();
+            $table->timestamps();
+            
+            $table->index(['user_id', 'user_type']);
         });
     }
 
-    /**
-     * Reverse the migrations.
-     */
     public function down(): void
     {
         Schema::dropIfExists('face_embeddings');

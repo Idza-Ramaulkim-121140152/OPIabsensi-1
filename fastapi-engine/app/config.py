@@ -4,7 +4,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    database_url: str = "postgresql://face_user:face_password@postgres:5432/face_recognition"
+    database_url: str = "mysql://root:@127.0.0.1:3306/face_recognition"
     similarity_threshold: float = 0.8
     arcface_model_name: str = "buffalo_l"
     face_engine_token: str = ""

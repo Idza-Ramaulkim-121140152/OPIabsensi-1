@@ -34,7 +34,8 @@ class FaceService:
         return embedding
 
     def find_best_match(self, query_embedding: np.ndarray, candidates: list[dict[str, Any]]) -> dict[str, Any]:
-        best_employee_id: int | None = None
+        best_user_id: int | None = None
+        best_user_type: str | None = None
         best_score = -1.0
 
         for candidate in candidates:
@@ -49,22 +50,26 @@ class FaceService:
             score = self._cosine_similarity(query_embedding, candidate_embedding)
             if score > best_score:
                 best_score = score
-                best_employee_id = int(candidate["employee_id"])
+                best_user_id = int(candidate["user_id"])
+                best_user_type = str(candidate["user_type"])
 
-        if best_employee_id is None:
+        if best_user_id is None:
             return {
                 "status": "unknown",
-                "employee_id": None,
+                "user_id": None,
+                "user_type": None,
                 "confidence": 0.0,
             }
 
         status = "matched" if best_score >= self._settings.similarity_threshold else "unknown"
         if status == "unknown":
-            best_employee_id = None
+            best_user_id = None
+            best_user_type = None
 
         return {
             "status": status,
-            "employee_id": best_employee_id,
+            "user_id": best_user_id,
+            "user_type": best_user_type,
             "confidence": round(float(best_score), 6),
         }
 

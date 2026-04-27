@@ -5,14 +5,11 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
-class FaceEmbedding extends Model
+class IotScanLog extends Model
 {
     use HasFactory;
 
-    protected $table = 'face_embeddings';
+    protected $table = 'iot_scan_logs';
+    protected $primaryKey = 'id_scan';
     protected $guarded = [];
-    
-    protected $casts = [
-        'embedding' => 'array',
-    ];
 }
