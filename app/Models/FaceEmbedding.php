@@ -14,5 +14,7 @@ class FaceEmbedding extends Model
     
     protected $casts = [
         'embedding' => 'array',
+        'landmarks' => 'array',
+        'landmark_count' => 'integer',
     ];
 }

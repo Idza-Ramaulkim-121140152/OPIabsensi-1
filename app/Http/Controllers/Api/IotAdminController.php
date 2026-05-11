@@ -3,19 +3,56 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\Guru;
 use App\Models\IotDevice;
 use App\Models\IotRegistrationCandidate;
 use App\Models\IotRegistrationSession;
 use App\Models\Siswa;
-use App\Services\FaceEngineClient;
+use App\Services\FaceRegistrationService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use RuntimeException;
 
 class IotAdminController extends Controller
 {
     public function devices()
     {
-        return response()->json(IotDevice::orderBy('last_seen_at', 'DESC')->get());
+        $windowSec = max(20, (int) env('IOT_DEVICE_ONLINE_WINDOW_SEC', 45));
+        $now = now()->getTimestamp();
+        
+        $devices = IotDevice::orderBy('last_seen_at', 'DESC')
+            ->get()
+            ->map(function ($device) use ($now, $windowSec) {
+                $lastSeenTs = false;
+                if ($device->last_seen_at) {
+                    $lastSeenDt = is_string($device->last_seen_at) 
+                        ? \Carbon\Carbon::parse($device->last_seen_at)
+                        : $device->last_seen_at;
+                    $lastSeenTs = $lastSeenDt->getTimestamp();
+                }
+                
+                $isOnline = $lastSeenTs !== false && ($now - $lastSeenTs) <= $windowSec;
+                $lastSeenDt = $device->last_seen_at 
+                    ? (is_string($device->last_seen_at) ? \Carbon\Carbon::parse($device->last_seen_at) : $device->last_seen_at)
+                    : null;
+                
+                return [
+                    'id_device' => $device->id_device,
+                    'device_code' => $device->device_code,
+                    'device_name' => $device->device_name,
+                    'device_type' => $device->device_type,
+                    'status_mode' => $device->status_mode,
+                    'last_seen_at' => $lastSeenDt?->toDateTimeString(),
+                    'last_seen_human' => $lastSeenDt ? $lastSeenDt->diffForHumans() : '-',
+                    'last_ip' => $device->last_ip,
+                    'last_message' => $device->last_message,
+                    'firmware_version' => $device->firmware_version,
+                    'is_online' => $isOnline,
+                    'created_at' => $device->created_at?->toDateTimeString(),
+                    'updated_at' => $device->updated_at?->toDateTimeString(),
+                ];
+            });
+        
+        return response()->json($devices);
     }
 
     public function sessions()
@@ -57,7 +94,7 @@ class IotAdminController extends Controller
         return response()->json(['message' => 'Cancelled']);
     }
 
-    public function saveSession(Request $request, $id, FaceEngineClient $faceEngine)
+    public function saveSession(Request $request, $id, FaceRegistrationService $faceRegistration)
     {
         $session = IotRegistrationSession::find($id);
         if (!$session) return response()->json(['message' => 'Session not found'], 404);
@@ -65,21 +102,48 @@ class IotAdminController extends Controller
         $targetType = $request->input('target_type');
         $targetId = $request->input('target_id');
         $namaSiswa = $request->input('nama_siswa');
+        if ($targetType !== 'siswa') {
+            return response()->json(['message' => 'Registrasi RFID/wajah hanya untuk siswa.'], 422);
+        }
         
         $rfid = $request->input('id_rfid', $session->captured_rfid);
         $face = $request->input('foto_wajah', $session->captured_face);
+        if (empty($face)) {
+            return response()->json(['message' => 'Foto wajah wajib tersedia untuk menyimpan registrasi.'], 422);
+        }
 
-        if ($targetType === 'siswa') {
-            if ($targetId) {
-                $siswa = Siswa::find($targetId);
-                $siswa->update(['id_rfid' => $rfid, 'foto_wajah' => $face]);
-            } else {
-                $siswa = Siswa::create(['nama' => $namaSiswa, 'id_rfid' => $rfid, 'foto_wajah' => $face]);
-                $targetId = $siswa->id;
-            }
-        } else {
-            $guru = Guru::find($targetId);
-            $guru->update(['id_rfid' => $rfid, 'foto_wajah' => $face]);
+        try {
+            DB::transaction(function () use (
+                $targetType,
+                &$targetId,
+                $namaSiswa,
+                $rfid,
+                $face,
+                $faceRegistration
+            ): void {
+                if ($targetType === 'siswa') {
+                    if ($targetId) {
+                        $siswa = Siswa::find($targetId);
+                        if (! $siswa) {
+                            throw new RuntimeException('Siswa not found');
+                        }
+                        $siswa->update(['id_rfid' => $rfid, 'foto_wajah' => $face]);
+                    } else {
+                        $siswa = Siswa::create(['nama' => $namaSiswa, 'id_rfid' => $rfid, 'foto_wajah' => $face]);
+                        $targetId = $siswa->id;
+                    }
+                    $faceRegistration->register('siswa', (int) $targetId, $face);
+                    return;
+                }
+
+                throw new RuntimeException('Registrasi RFID/wajah hanya untuk siswa.');
+            });
+        } catch (RuntimeException $exception) {
+            $message = $exception->getMessage();
+            $status = in_array($message, ['Siswa not found', 'Guru not found'], true) ? 404 : 422;
+            return response()->json(['message' => $message], $status);
+        } catch (\Throwable $exception) {
+            return response()->json(['message' => 'Gagal menyimpan registrasi wajah.'], 422);
         }
 
         $session->update(['status' => 'assigned', 'target_type' => $targetType, 'target_id' => $targetId, 'completed_at' => now()]);
@@ -88,7 +152,7 @@ class IotAdminController extends Controller
         return response()->json(['message' => 'Saved']);
     }
 
-    public function savePemetaan(Request $request)
+    public function savePemetaan(Request $request, FaceRegistrationService $faceRegistration)
     {
         $candidateId = $request->input('candidate_id');
         $candidate = IotRegistrationCandidate::find($candidateId);
@@ -96,13 +160,25 @@ class IotAdminController extends Controller
 
         $targetType = $request->input('target_type');
         $targetId = $request->input('target_id');
+        if ($targetType !== 'siswa') {
+            return response()->json(['message' => 'Pemetaan RFID/wajah hanya untuk siswa.'], 422);
+        }
+        if (empty($candidate->foto_wajah)) {
+            return response()->json(['message' => 'Candidate belum memiliki foto wajah untuk dipetakan.'], 422);
+        }
 
         if ($targetType === 'siswa') {
             $siswa = Siswa::find($targetId);
+            if (!$siswa) return response()->json(['message' => 'Siswa not found'], 404);
             $siswa->update(['id_rfid' => $candidate->id_rfid, 'foto_wajah' => $candidate->foto_wajah, 'kelas' => $request->input('kelas_siswa')]);
-        } else {
-            $guru = Guru::find($targetId);
-            $guru->update(['id_rfid' => $candidate->id_rfid, 'foto_wajah' => $candidate->foto_wajah]);
+
+            try {
+                if (! empty($candidate->foto_wajah)) {
+                    $faceRegistration->register('siswa', (int) $siswa->id, $candidate->foto_wajah);
+                }
+            } catch (RuntimeException $exception) {
+                return response()->json(['message' => $exception->getMessage()], 422);
+            }
         }
 
         $candidate->update(['status' => 'mapped', 'mapped_target_type' => $targetType, 'mapped_target_id' => $targetId, 'mapped_at' => now()]);

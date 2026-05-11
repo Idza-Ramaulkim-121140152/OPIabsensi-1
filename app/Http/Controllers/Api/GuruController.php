@@ -3,8 +3,12 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\FaceEmbedding;
 use App\Models\Guru;
+use App\Services\FaceRegistrationService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use RuntimeException;
 
 class GuruController extends Controller
 {
@@ -20,7 +24,7 @@ class GuruController extends Controller
         return response()->json($guru);
     }
 
-    public function store(Request $request)
+    public function store(Request $request, FaceRegistrationService $faceRegistration)
     {
         $validated = $request->validate([
             'nama' => 'required|string|max:150',
@@ -33,11 +37,24 @@ class GuruController extends Controller
             'foto_wajah' => 'nullable|string',
         ]);
 
-        $guru = Guru::create($validated);
+        try {
+            $guru = DB::transaction(function () use ($validated, $faceRegistration) {
+                $guru = Guru::create($validated);
+
+                if (! empty($validated['foto_wajah'])) {
+                    $faceRegistration->register('guru', (int) $guru->id_guru, $validated['foto_wajah']);
+                }
+
+                return $guru;
+            });
+        } catch (RuntimeException $exception) {
+            return response()->json(['message' => $exception->getMessage()], 422);
+        }
+
         return response()->json($guru, 201);
     }
 
-    public function update(Request $request, $id)
+    public function update(Request $request, $id, FaceRegistrationService $faceRegistration)
     {
         $guru = Guru::find($id);
         if (!$guru) return response()->json(['message' => 'Not found'], 404);
@@ -53,7 +70,23 @@ class GuruController extends Controller
             'foto_wajah' => 'nullable|string',
         ]);
 
-        $guru->update($validated);
+        try {
+            DB::transaction(function () use ($guru, $validated, $faceRegistration) {
+                $guru->update($validated);
+
+                if (array_key_exists('foto_wajah', $validated)) {
+                    if (! empty($validated['foto_wajah'])) {
+                        $faceRegistration->register('guru', (int) $guru->id_guru, $validated['foto_wajah']);
+                    } else {
+                        FaceEmbedding::where('user_id', $guru->id_guru)->where('user_type', 'guru')->delete();
+                    }
+                }
+            });
+        } catch (RuntimeException $exception) {
+            return response()->json(['message' => $exception->getMessage()], 422);
+        }
+
+        $guru->refresh();
         return response()->json($guru);
     }
 

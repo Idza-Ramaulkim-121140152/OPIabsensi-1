@@ -23,13 +23,19 @@ class JadwalMengajarController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'id_guru' => 'required|exists:guru,id_guru',
-            'kelas' => 'required|string|max:50',
-            'mata_pelajaran' => 'required|string|max:120',
-            'hari' => 'required|string|max:10',
-            'jam_mulai' => 'required|date_format:H:i',
-            'jam_selesai' => 'required|date_format:H:i',
+            'hari' => 'required',
+            'shifts' => 'required|array|min:1',
+            'shifts.*.nama' => 'nullable|string|max:100',
+            'shifts.*.masuk_awal' => 'required|date_format:H:i',
+            'shifts.*.masuk_akhir' => 'required|date_format:H:i',
+            'shifts.*.pulang_awal' => 'required|date_format:H:i',
+            'shifts.*.pulang_akhir' => 'required|date_format:H:i',
         ]);
+
+        $validated['hari'] = $this->normalizeHari($request->input('hari'));
+        if ($validated['hari'] === '') {
+            return response()->json(['message' => 'Pilih minimal satu hari jadwal.'], 422);
+        }
 
         $jadwal = JadwalMengajar::create($validated);
         return response()->json($jadwal, 201);
@@ -41,13 +47,21 @@ class JadwalMengajarController extends Controller
         if (!$jadwal) return response()->json(['message' => 'Not found'], 404);
 
         $validated = $request->validate([
-            'id_guru' => 'sometimes|required|exists:guru,id_guru',
-            'kelas' => 'sometimes|required|string|max:50',
-            'mata_pelajaran' => 'sometimes|required|string|max:120',
-            'hari' => 'sometimes|required|string|max:10',
-            'jam_mulai' => 'sometimes|required|date_format:H:i',
-            'jam_selesai' => 'sometimes|required|date_format:H:i',
+            'hari' => 'sometimes|required',
+            'shifts' => 'sometimes|required|array|min:1',
+            'shifts.*.nama' => 'nullable|string|max:100',
+            'shifts.*.masuk_awal' => 'required|date_format:H:i',
+            'shifts.*.masuk_akhir' => 'required|date_format:H:i',
+            'shifts.*.pulang_awal' => 'required|date_format:H:i',
+            'shifts.*.pulang_akhir' => 'required|date_format:H:i',
         ]);
+
+        if ($request->has('hari')) {
+            $validated['hari'] = $this->normalizeHari($request->input('hari'));
+            if ($validated['hari'] === '') {
+                return response()->json(['message' => 'Pilih minimal satu hari jadwal.'], 422);
+            }
+        }
 
         $jadwal->update($validated);
         return response()->json($jadwal);
@@ -60,5 +74,23 @@ class JadwalMengajarController extends Controller
 
         $jadwal->delete();
         return response()->json(['message' => 'Deleted']);
+    }
+
+    private function normalizeHari(mixed $hari): string
+    {
+        $allowed = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'];
+        $items = is_array($hari)
+            ? $hari
+            : preg_split('/\s*,\s*/', (string) $hari, -1, PREG_SPLIT_NO_EMPTY);
+
+        $normalized = [];
+        foreach ($items ?: [] as $item) {
+            $item = trim((string) $item);
+            if (in_array($item, $allowed, true) && ! in_array($item, $normalized, true)) {
+                $normalized[] = $item;
+            }
+        }
+
+        return implode(',', $normalized);
     }
 }

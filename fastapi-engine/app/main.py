@@ -70,16 +70,19 @@ async def register_face(
     image_bytes = await read_image(image)
 
     try:
-        embedding = face_service.extract_embedding(image_bytes)
+        face_data = face_service.extract_face_data(image_bytes)
     except ValueError as exception:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=str(exception),
         ) from exception
 
+    embedding = face_data["embedding"]
     return {
         "embedding": embedding.tolist(),
         "embedding_dimension": int(embedding.size),
+        "landmarks": face_data["landmarks"],
+        "image_size": face_data["image_size"],
     }
 
 

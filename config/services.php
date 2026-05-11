@@ -45,4 +45,8 @@ return [
         'api_token' => env('FACE_GATEWAY_BEARER_TOKEN', ''),
     ],
 
+    'iot' => [
+        'device_token' => env('IOT_DEVICE_TOKEN', 'orange-pi-zero3-token'),
+    ],
+
 ];

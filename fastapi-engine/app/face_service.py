@@ -13,7 +13,7 @@ class FaceService:
         self._engine = FaceAnalysis(name=settings.arcface_model_name, providers=["CPUExecutionProvider"])
         self._engine.prepare(ctx_id=0, det_size=(640, 640))
 
-    def extract_embedding(self, image_bytes: bytes) -> np.ndarray:
+    def extract_face_data(self, image_bytes: bytes) -> dict[str, Any]:
         image_array = np.frombuffer(image_bytes, dtype=np.uint8)
         image = cv2.imdecode(image_array, cv2.IMREAD_COLOR)
 
@@ -31,7 +31,28 @@ class FaceService:
         if embedding.size != 512:
             raise ValueError("ArcFace embedding is not 512-dim.")
 
-        return embedding
+        raw_landmarks = getattr(face, "kps", None)
+        landmarks: list[dict[str, float]] = []
+        if raw_landmarks is not None:
+            points = np.asarray(raw_landmarks, dtype=np.float32).reshape(-1, 2)
+            landmarks = [
+                {"x": round(float(point[0]), 4), "y": round(float(point[1]), 4)}
+                for point in points
+            ]
+
+        image_height, image_width = image.shape[:2]
+
+        return {
+            "embedding": embedding,
+            "landmarks": landmarks,
+            "image_size": {
+                "width": int(image_width),
+                "height": int(image_height),
+            },
+        }
+
+    def extract_embedding(self, image_bytes: bytes) -> np.ndarray:
+        return self.extract_face_data(image_bytes)["embedding"]
 
     def find_best_match(self, query_embedding: np.ndarray, candidates: list[dict[str, Any]]) -> dict[str, Any]:
         best_user_id: int | None = None

@@ -11,5 +11,6 @@ class IotScanLog extends Model
 
     protected $table = 'iot_scan_logs';
     protected $primaryKey = 'id_scan';
+    public $timestamps = false;
     protected $guarded = [];
 }

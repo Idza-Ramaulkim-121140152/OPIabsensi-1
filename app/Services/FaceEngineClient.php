@@ -14,12 +14,26 @@ class FaceEngineClient
         return $this->sendImage('/v1/register', $image);
     }
 
+    public function registerImageData(string $contents, string $filename = 'face.jpg'): array
+    {
+        return $this->sendImageData('/v1/register', $contents, $filename);
+    }
+
     public function attendance(UploadedFile $image): array
     {
         return $this->sendImage('/v1/attendance', $image);
     }
 
     private function sendImage(string $path, UploadedFile $image): array
+    {
+        return $this->sendImageData(
+            $path,
+            file_get_contents($image->getRealPath()),
+            $image->getClientOriginalName()
+        );
+    }
+
+    private function sendImageData(string $path, string $contents, string $filename): array
     {
         $baseUrl = rtrim((string) config('services.face_engine.base_url'), '/');
         $timeout = (float) config('services.face_engine.timeout', 2.0);
@@ -39,8 +53,8 @@ class FaceEngineClient
             $response = $request
                 ->attach(
                     'image',
-                    file_get_contents($image->getRealPath()),
-                    $image->getClientOriginalName()
+                    $contents,
+                    $filename
                 )
                 ->post($baseUrl.$path);
         } catch (\Throwable $exception) {
