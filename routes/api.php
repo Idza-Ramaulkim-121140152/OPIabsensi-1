@@ -14,6 +14,7 @@ use App\Http\Controllers\Api\IotAdminController;
 Route::middleware(['bearer.token'])->group(function (): void {
     // Face Recognition Engine
     Route::post('/face/register', [FaceController::class, 'register'])->middleware('throttle:face-api');
+    Route::get('/face/landmark', [FaceController::class, 'landmark']);
     
     // CRUD Data Master
     Route::apiResource('siswa', SiswaController::class);
@@ -22,7 +23,7 @@ Route::middleware(['bearer.token'])->group(function (): void {
     Route::apiResource('jadwal', JadwalMengajarController::class);
     
     // Presensi Logs
-    Route::apiResource('presensi', PresensiController::class)->only(['index', 'show']);
+    Route::apiResource('presensi', PresensiController::class)->only(['index', 'show', 'update', 'destroy']);
 
     // IoT Admin
     Route::get('/iot-admin/devices', [IotAdminController::class, 'devices']);
